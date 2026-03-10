@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Blocklist Manager</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+
+  <!-- ── Floating banner ──────────────────────────────────── -->
+  <div id="banner" class="banner banner--error" hidden></div>
+
+  <!-- ── Header ───────────────────────────────────────────── -->
+  <header class="app-header">
+    <h1>Blocklist Manager</h1>
+    <span class="user-pill" id="user-name">…</span>
+  </header>
+
+  <!-- ── Navigation ───────────────────────────────────────── -->
+  <nav class="app-nav">
+    <button class="nav-tab nav-tab--active" data-hash="#entries">Entries</button>
+    <button class="nav-tab" data-hash="#add">Add Entry</button>
+    <button class="nav-tab" data-hash="#bulk">Bulk Add</button>
+    <button class="nav-tab" data-hash="#audit">Audit Log</button>
+  </nav>
+
+  <!-- ── Main ─────────────────────────────────────────────── -->
+  <main class="app-main">
+
+    <!-- =========================================================
+         ENTRIES SECTION
+    ========================================================= -->
+    <section id="section-entries">
+      <div class="toolbar">
+        <label for="list-selector" style="font-size:.8rem;color:var(--text-muted);">List:</label>
+        <select id="list-selector" class="list-selector-all">
+          <option value="default">default</option>
+        </select>
+        <span class="entries-count" id="entries-count"></span>
+        <div class="toolbar-right">
+          <button class="btn btn--ghost btn--sm" id="btn-refresh">↻ Refresh</button>
+        </div>
+      </div>
+
+      <!-- Sort header -->
+      <div class="sort-header">
+        <span class="sort-col-ip"     data-sort="ip"        >IP</span>
+        <span class="sort-col-reason" data-sort="reason"    >Reason</span>
+        <span class="sort-col-by"     data-sort="added_by"  >Added by</span>
+        <span class="sort-col-added sort-desc"  data-sort="added_at"  >Added at</span>
+        <span class="sort-col-expires" data-sort="expires_at">Expires at</span>
+        <span class="sort-col-actions"></span>
+      </div>
+
+      <div id="entries-spinner" class="spinner" hidden></div>
+      <div id="entries-list"></div>
+    </section>
+
+    <!-- =========================================================
+         ADD ENTRY SECTION
+    ========================================================= -->
+    <section id="section-add" hidden>
+      <div class="form-card">
+        <h2>Add Blocklist Entry</h2>
+        <form id="form-add" autocomplete="off">
+          <div class="form-group">
+            <label for="add-list">List</label>
+            <select id="add-list" name="list_name" class="list-selector-all list-selector-sync"></select>
+          </div>
+          <div class="form-group">
+            <label for="add-ip">IP Address</label>
+            <input type="text" id="add-ip" name="ip"
+              placeholder="203.0.113.1" required
+              pattern="^((25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(25[0-5]|2[0-4]\d|[01]?\d\d?)$|^([0-9a-fA-F:]+)$" />
+          </div>
+          <div class="form-group">
+            <label for="add-reason">Reason</label>
+            <input type="text" id="add-reason" name="reason" placeholder="e.g. C2 server" required />
+          </div>
+          <div class="form-group">
+            <label for="add-expires">Expires in</label>
+            <select id="add-expires" name="expires_in">
+              <option value="1d">1 day</option>
+              <option value="1w" selected>1 week</option>
+              <option value="1m">1 month</option>
+              <option value="3m">3 months</option>
+              <option value="6m">6 months</option>
+              <option value="1y">1 year</option>
+            </select>
+          </div>
+          <button type="submit" class="btn btn--primary">Add Entry</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- =========================================================
+         BULK ADD SECTION
+    ========================================================= -->
+    <section id="section-bulk" hidden>
+      <div class="form-card">
+        <h2>Bulk Add Entries</h2>
+        <form id="form-bulk" autocomplete="off">
+          <div class="form-group">
+            <label for="bulk-list">List</label>
+            <select id="bulk-list" name="list_name" class="list-selector-all list-selector-sync"></select>
+          </div>
+          <div class="form-group">
+            <label for="bulk-ips">IP Addresses (one per line)</label>
+            <textarea id="bulk-ips" name="ips" placeholder="203.0.113.1&#10;198.51.100.2&#10;…" required></textarea>
+          </div>
+          <div class="form-group">
+            <label for="bulk-reason">Reason</label>
+            <input type="text" id="bulk-reason" name="reason" placeholder="e.g. Threat intel feed" required />
+          </div>
+          <div class="form-group">
+            <label for="bulk-expires">Expires in</label>
+            <select id="bulk-expires" name="expires_in">
+              <option value="1d">1 day</option>
+              <option value="1w" selected>1 week</option>
+              <option value="1m">1 month</option>
+              <option value="3m">3 months</option>
+              <option value="6m">6 months</option>
+              <option value="1y">1 year</option>
+            </select>
+          </div>
+          <button type="submit" class="btn btn--primary">Add All</button>
+        </form>
+        <div id="bulk-status" style="margin-top:.75rem"></div>
+      </div>
+    </section>
+
+    <!-- =========================================================
+         AUDIT SECTION
+    ========================================================= -->
+    <section id="section-audit" hidden>
+      <div class="audit-toolbar">
+        <label for="audit-list-sel" style="font-size:.8rem;color:var(--text-muted);">List:</label>
+        <select id="audit-list-sel" class="list-selector-all list-selector-sync"></select>
+        <input id="audit-filter" class="audit-filter-input" type="text" placeholder="Filter…" />
+      </div>
+
+      <div id="audit-spinner" class="spinner" hidden></div>
+      <div id="audit-list"></div>
+
+      <div class="pager">
+        <button class="btn btn--ghost btn--sm" id="btn-audit-prev" disabled>← Prev</button>
+        <span id="audit-page-info">Page 1</span>
+        <button class="btn btn--ghost btn--sm" id="btn-audit-next" disabled>Next →</button>
+      </div>
+    </section>
+
+  </main>
+
+  <script type="module" src="/static/js/main.js"></script>
+</body>
+</html>
