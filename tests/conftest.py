@@ -13,7 +13,8 @@ OIDC strategy
 OIDC is bypassed entirely: fixtures pre-seed Flask sessions with a
 valid `user` dict and a known CSRF token.  The `require_session` and
 `require_csrf` decorators only inspect the session, so no real IdP is
-required.
+required.  The module-level `_oidc_config` cache is pre-seeded so that
+`_discover()` never attempts an HTTP call even if a test hits /auth/*.
 """
 
 import os
@@ -23,6 +24,7 @@ import psycopg2
 import pytest
 
 from app import create_app
+import app.auth as auth_module
 
 # ---------------------------------------------------------------------------
 # Test DB config (overridable via env vars)
@@ -40,6 +42,14 @@ ADMIN_DB = {**TEST_DB, "dbname": "postgres"}
 
 CSRF = "test-csrf-token"
 USER = {"email": "tester@example.com", "name": "Tester"}
+
+# Fake discovery document — mirrors what a real IdP returns
+_FAKE_OIDC_CONFIG = {
+    "issuer":                 "https://idp.test",
+    "authorization_endpoint": "https://idp.test/auth",
+    "token_endpoint":         "https://idp.test/token",
+    "jwks_uri":               "https://idp.test/jwks",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -73,7 +83,6 @@ def db_session():
     admin = psycopg2.connect(**ADMIN_DB)
     admin.autocommit = True
     with admin.cursor() as cur:
-        # Terminate connections so DROP works
         cur.execute(
             "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
             "WHERE datname = %s AND pid <> pg_backend_pid()",
@@ -104,35 +113,26 @@ def app(db_session):
         "TESTING": True,
         "SECRET_KEY": "test-secret",
         "SESSION_COOKIE_SECURE": False,
-        # Point the app at the test DB
-        **{k.upper(): v for k, v in {
-            "db_host":     db_session["host"],
-            "db_port":     str(db_session["port"]),
-            "db_name":     db_session["dbname"],
-            "db_user":     db_session["user"],
-            "db_password": db_session["password"],
-        }.items()},
     }
 
-    # Inject DB env vars so db.py can read them
     os.environ.update({
         "DB_HOST":     db_session["host"],
         "DB_PORT":     str(db_session["port"]),
         "DB_NAME":     db_session["dbname"],
         "DB_USER":     db_session["user"],
         "DB_PASSWORD": db_session["password"],
-        "SESSION_SECRET":            "test-secret",
-        "LIST_BASIC_AUTH_USER":      "edl",
-        "LIST_BASIC_AUTH_PASSWORD":  "edlpass",
-        "DEFAULT_LIST":              "default",
-        "OIDC_ISSUER":        "https://idp.test",
-        "OIDC_CLIENT_ID":     "test-client",
-        "OIDC_CLIENT_SECRET": "test-secret",
-        "OIDC_AUTH_ENDPOINT": "https://idp.test/auth",
-        "OIDC_TOKEN_ENDPOINT":"https://idp.test/token",
-        "OIDC_JWKS_URI":      "https://idp.test/jwks",
-        "OIDC_REDIRECT_URI":  "https://app.test/auth/callback",
+        "SESSION_SECRET":           "test-secret",
+        "LIST_BASIC_AUTH_USER":     "edl",
+        "LIST_BASIC_AUTH_PASSWORD": "edlpass",
+        "DEFAULT_LIST":             "default",
+        "OIDC_DISCOVERY_URL":       "https://idp.test/.well-known/openid-configuration",
+        "OIDC_CLIENT_ID":           "test-client",
+        "OIDC_CLIENT_SECRET":       "test-secret",
+        "OIDC_REDIRECT_URI":        "https://app.test/auth/callback",
     })
+
+    # Pre-seed the discovery cache so no HTTP call is ever made in tests
+    auth_module._oidc_config = _FAKE_OIDC_CONFIG
 
     application = create_app(cfg)
     application.config["SESSION_COOKIE_SECURE"] = False

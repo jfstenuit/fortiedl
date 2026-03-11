@@ -11,23 +11,48 @@ from functools import wraps
 import requests
 import jwt
 from jwt import PyJWKClient
-from flask import Blueprint, session, redirect, request, abort, current_app, jsonify
+from flask import Blueprint, session, redirect, request, abort, jsonify
 
 logger = logging.getLogger(__name__)
 
 auth_bp = Blueprint("auth", __name__)
 
 # ---------------------------------------------------------------------------
-# Config (read once at import time; overridable via app.config in tests)
+# OIDC discovery — fetched once per worker process, then cached
 # ---------------------------------------------------------------------------
 
-def _cfg(key: str, default: str = "") -> str:
-    return os.environ.get(key, default)
+_oidc_config: dict | None = None
+_jwks_client: PyJWKClient | None = None
+
+
+def _discover() -> dict:
+    """Return the cached OIDC discovery document, fetching it if needed."""
+    global _oidc_config
+    if _oidc_config is None:
+        url = os.environ.get("OIDC_DISCOVERY_URL", "")
+        if not url:
+            raise RuntimeError("OIDC_DISCOVERY_URL is not configured")
+        resp = requests.get(url, timeout=10)
+        resp.raise_for_status()
+        _oidc_config = resp.json()
+        logger.info("OIDC discovery loaded from %s (issuer: %s)", url, _oidc_config.get("issuer"))
+    return _oidc_config
+
+
+def _get_jwks_client() -> PyJWKClient:
+    global _jwks_client
+    if _jwks_client is None:
+        _jwks_client = PyJWKClient(_discover()["jwks_uri"], cache_keys=True)
+    return _jwks_client
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _cfg(key: str, default: str = "") -> str:
+    return os.environ.get(key, default)
+
 
 def _pkce_pair() -> tuple[str, str]:
     """Return (code_verifier, code_challenge)."""
@@ -48,12 +73,12 @@ def _build_auth_url(state: str, challenge: str, prompt: str) -> str:
         "code_challenge_method": "S256",
         "prompt": prompt,
     }
-    return _cfg("OIDC_AUTH_ENDPOINT") + "?" + urllib.parse.urlencode(params)
+    return _discover()["authorization_endpoint"] + "?" + urllib.parse.urlencode(params)
 
 
 def _exchange_code(code: str, verifier: str) -> dict:
     resp = requests.post(
-        _cfg("OIDC_TOKEN_ENDPOINT"),
+        _discover()["token_endpoint"],
         data={
             "grant_type": "authorization_code",
             "code": code,
@@ -69,19 +94,14 @@ def _exchange_code(code: str, verifier: str) -> dict:
 
 
 def _validate_id_token(id_token: str) -> dict:
-    jwks_uri = _cfg("OIDC_JWKS_URI")
-    client_id = _cfg("OIDC_CLIENT_ID")
-    issuer = _cfg("OIDC_ISSUER")
-
-    jwks_client = PyJWKClient(jwks_uri, cache_keys=True)
-    signing_key = jwks_client.get_signing_key_from_jwt(id_token)
-
+    oidc = _discover()
+    signing_key = _get_jwks_client().get_signing_key_from_jwt(id_token)
     claims = jwt.decode(
         id_token,
         signing_key.key,
         algorithms=["RS256", "ES256"],
-        audience=client_id,
-        issuer=issuer,
+        audience=_cfg("OIDC_CLIENT_ID"),
+        issuer=oidc["issuer"],
         options={"require": ["exp", "iat", "sub"]},
     )
     return claims
@@ -91,8 +111,7 @@ def _check_group(claims: dict) -> bool:
     required = _cfg("OIDC_REQUIRED_GROUP")
     if not required:
         return True
-    groups = claims.get("groups", [])
-    return required in groups
+    return required in claims.get("groups", [])
 
 
 # ---------------------------------------------------------------------------
@@ -104,8 +123,7 @@ def require_session(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         if "user" not in session:
-            if request.accept_mimetypes.best == "application/json" or \
-               request.path.startswith("/api/"):
+            if request.path.startswith("/api/"):
                 abort(401)
             return redirect("/auth/login")
         return f(*args, **kwargs)
@@ -134,7 +152,7 @@ def login():
     state = secrets.token_urlsafe(16)
     session["oidc_state"] = state
     session["oidc_code_verifier"] = verifier
-    # First attempt: silent login
+    # First attempt: silent login (avoids login page flash if already authed)
     return redirect(_build_auth_url(state, challenge, prompt="none"))
 
 
@@ -151,10 +169,9 @@ def callback():
         return redirect(_build_auth_url(state, challenge, prompt="login"))
 
     if error:
-        logger.warning("OIDC error from IdP: %s — %s", error, request.args.get("error_description"))
+        logger.warning("OIDC error: %s — %s", error, request.args.get("error_description"))
         abort(401, f"Authentication failed: {error}")
 
-    # Validate state
     returned_state = request.args.get("state", "")
     stored_state = session.pop("oidc_state", None)
     if not stored_state or not secrets.compare_digest(returned_state, stored_state):
@@ -175,7 +192,6 @@ def callback():
     if not _check_group(claims):
         abort(403, "Access denied: required group membership missing")
 
-    # Establish session
     session.clear()
     session.permanent = True
     session["user"] = {
@@ -187,10 +203,15 @@ def callback():
     return redirect("/")
 
 
+@auth_bp.route("/auth/logout")
+def logout():
+    session.clear()
+    return redirect("/auth/login")
+
+
 @auth_bp.route("/api/csrf")
 @require_session
 def csrf_token():
-    """Return the CSRF token for the current session."""
     return jsonify({"csrf_token": session["csrf_token"]})
 
 
