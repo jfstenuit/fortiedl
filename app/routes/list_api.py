@@ -7,6 +7,7 @@ from flask import Blueprint, request, abort, Response
 
 from ..db import query
 from ..expiry import run_expiry
+from . import get_default_list
 
 list_api_bp = Blueprint("list_api", __name__)
 
@@ -31,7 +32,7 @@ def get_list():
             {"WWW-Authenticate": 'Basic realm="EDL"'},
         )
 
-    list_name = request.args.get("id", os.environ.get("DEFAULT_LIST", "default"))
+    list_name = request.args.get("id", get_default_list())
 
     # Housekeeping: expire stale entries before building the list
     run_expiry(list_name)

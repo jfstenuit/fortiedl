@@ -10,6 +10,7 @@ from flask import Blueprint, request, jsonify, session, abort
 from ..auth import require_session, require_csrf
 from ..db import query, execute
 from ..expiry import write_audit
+from . import get_available_lists, get_default_list
 
 logger = logging.getLogger(__name__)
 
@@ -61,19 +62,19 @@ def _current_user() -> str:
 @entries_bp.route("/api/lists")
 @require_session
 def list_names():
-    """Return distinct list names present in the DB + the default list."""
+    """Return configured lists (AVAILABLE_LISTS) plus any extra names in the DB."""
+    configured = get_available_lists()
     rows = query("SELECT DISTINCT list_name FROM blocklist_entries ORDER BY list_name")
-    names = [r["list_name"] for r in rows]
-    default = os.environ.get("DEFAULT_LIST", "default")
-    if default not in names:
-        names.insert(0, default)
-    return jsonify(names)
+    db_names = [r["list_name"] for r in rows]
+    # Configured lists first (preserving order), then any DB-only extras
+    extras = [n for n in db_names if n not in configured]
+    return jsonify(configured + extras)
 
 
 @entries_bp.route("/api/entries")
 @require_session
 def get_entries():
-    list_name = request.args.get("list", os.environ.get("DEFAULT_LIST", "default"))
+    list_name = request.args.get("list", get_default_list())
     rows = query(
         """
         SELECT id, list_name, host(ip) AS ip, reason, added_by, added_at, expires_at
@@ -93,7 +94,7 @@ def create_entry():
     body = request.get_json(silent=True) or {}
     ip = (body.get("ip") or "").strip()
     reason = (body.get("reason") or "").strip()
-    list_name = (body.get("list_name") or os.environ.get("DEFAULT_LIST", "default")).strip()
+    list_name = (body.get("list_name") or get_default_list()).strip()
     expires_in = body.get("expires_in", "1w")
 
     if not ip:
@@ -140,7 +141,7 @@ def create_entry():
 @require_csrf
 def update_entry(ip: str):
     body = request.get_json(silent=True) or {}
-    list_name = (body.get("list_name") or os.environ.get("DEFAULT_LIST", "default")).strip()
+    list_name = (body.get("list_name") or get_default_list()).strip()
     reason = (body.get("reason") or "").strip()
     expires_in = body.get("expires_in")
 
@@ -197,7 +198,7 @@ def update_entry(ip: str):
 @require_session
 @require_csrf
 def delete_entry(ip: str):
-    list_name = request.args.get("list", os.environ.get("DEFAULT_LIST", "default"))
+    list_name = request.args.get("list", get_default_list())
 
     if not _valid_ip(ip):
         abort(400, "Invalid IP address")

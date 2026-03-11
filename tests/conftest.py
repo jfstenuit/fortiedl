@@ -124,7 +124,7 @@ def app(db_session):
         "SESSION_SECRET":           "test-secret",
         "LIST_BASIC_AUTH_USER":     "edl",
         "LIST_BASIC_AUTH_PASSWORD": "edlpass",
-        "DEFAULT_LIST":             "default",
+        "AVAILABLE_LISTS":             "default,inbound",
         "OIDC_DISCOVERY_URL":       "https://idp.test/.well-known/openid-configuration",
         "OIDC_CLIENT_ID":           "test-client",
         "OIDC_CLIENT_SECRET":       "test-secret",
