@@ -42,7 +42,6 @@ nano .env          # or: vi .env
 | `OIDC_DISCOVERY_URL` | Well-known URL of your identity provider (see below) |
 | `OIDC_CLIENT_ID` | Application (client) ID from the IdP registration |
 | `OIDC_CLIENT_SECRET` | Client secret from the IdP registration |
-| `OIDC_REDIRECT_URI` | Must be `https://<your-hostname>/auth/callback` |
 | `OIDC_REQUIRED_GROUP` | Display name of the group whose members may log in |
 | `SESSION_SECRET` | Random secret — generate one: `python3 -c "import secrets; print(secrets.token_hex(32))"` |
 | `LIST_BASIC_AUTH_USER` | Username the Fortigate uses to fetch the EDL |

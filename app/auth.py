@@ -11,7 +11,7 @@ from functools import wraps
 import requests
 import jwt
 from jwt import PyJWKClient
-from flask import Blueprint, session, redirect, request, abort, jsonify
+from flask import Blueprint, session, redirect, request, abort, jsonify, url_for
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +66,7 @@ def _build_auth_url(state: str, challenge: str, prompt: str) -> str:
     params = {
         "response_type": "code",
         "client_id": _cfg("OIDC_CLIENT_ID"),
-        "redirect_uri": _cfg("OIDC_REDIRECT_URI"),
+        "redirect_uri": url_for("auth.callback", _external=True),
         "scope": "openid profile email",
         "state": state,
         "code_challenge": challenge,
@@ -82,7 +82,7 @@ def _exchange_code(code: str, verifier: str) -> dict:
         data={
             "grant_type": "authorization_code",
             "code": code,
-            "redirect_uri": _cfg("OIDC_REDIRECT_URI"),
+            "redirect_uri": url_for("auth.callback", _external=True),
             "client_id": _cfg("OIDC_CLIENT_ID"),
             "client_secret": _cfg("OIDC_CLIENT_SECRET"),
             "code_verifier": verifier,

@@ -5,6 +5,7 @@ import logging
 import logging.handlers
 
 from flask import Flask, session, redirect
+from werkzeug.middleware.proxy_fix import ProxyFix
 from flask import send_from_directory
 
 
@@ -19,6 +20,9 @@ def create_app(config: dict | None = None) -> Flask:
     app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
     app.config["PERMANENT_SESSION_LIFETIME"] = 3600  # seconds
+
+    # Trust one proxy level (nginx) for scheme and host reconstruction
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
     if config:
         app.config.update(config)

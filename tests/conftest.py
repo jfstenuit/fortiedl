@@ -128,7 +128,6 @@ def app(db_session):
         "OIDC_DISCOVERY_URL":       "https://idp.test/.well-known/openid-configuration",
         "OIDC_CLIENT_ID":           "test-client",
         "OIDC_CLIENT_SECRET":       "test-secret",
-        "OIDC_REDIRECT_URI":        "https://app.test/auth/callback",
     })
 
     # Pre-seed the discovery cache so no HTTP call is ever made in tests
