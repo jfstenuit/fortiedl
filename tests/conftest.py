@@ -130,8 +130,9 @@ def app(db_session):
         "OIDC_CLIENT_SECRET":       "test-secret",
     })
 
-    # Pre-seed the discovery cache so no HTTP call is ever made in tests
+    # Pre-seed caches so no HTTP call is ever made in tests
     auth_module._oidc_config = _FAKE_OIDC_CONFIG
+    auth_module._jwks_keys = []   # JWKS fetch skipped; token validation never called in tests
 
     application = create_app(cfg)
     application.config["SESSION_COOKIE_SECURE"] = False

@@ -10,7 +10,7 @@ from functools import wraps
 
 import requests
 import jwt
-from jwt import PyJWKClient
+from jwt import PyJWK
 from flask import Blueprint, session, redirect, request, abort, jsonify, url_for
 
 logger = logging.getLogger(__name__)
@@ -18,11 +18,14 @@ logger = logging.getLogger(__name__)
 auth_bp = Blueprint("auth", __name__)
 
 # ---------------------------------------------------------------------------
-# OIDC discovery — fetched once per worker process, then cached
+# OIDC discovery and JWKS — fetched once per worker process, then cached.
+# Both use `requests` so the same User-Agent and SSL stack are used for all
+# outbound calls, avoiding the 403s that urllib (used by PyJWKClient) triggers
+# on some IdPs (Authentik, Cloudflare-protected endpoints, …).
 # ---------------------------------------------------------------------------
 
 _oidc_config: dict | None = None
-_jwks_client: PyJWKClient | None = None
+_jwks_keys: list | None = None       # raw list of JWK dicts
 
 
 def _discover() -> dict:
@@ -39,11 +42,20 @@ def _discover() -> dict:
     return _oidc_config
 
 
-def _get_jwks_client() -> PyJWKClient:
-    global _jwks_client
-    if _jwks_client is None:
-        _jwks_client = PyJWKClient(_discover()["jwks_uri"], cache_keys=True)
-    return _jwks_client
+def _get_signing_key(id_token: str):
+    """Return the signing key for *id_token*, fetching JWKS via requests if needed."""
+    global _jwks_keys
+    if _jwks_keys is None:
+        resp = requests.get(_discover()["jwks_uri"], timeout=10)
+        resp.raise_for_status()
+        _jwks_keys = resp.json().get("keys", [])
+
+    kid = jwt.get_unverified_header(id_token).get("kid")
+    for key_data in _jwks_keys:
+        if not kid or key_data.get("kid") == kid:
+            return PyJWK(key_data).key
+
+    raise ValueError(f"No matching signing key found (kid={kid!r})")
 
 
 # ---------------------------------------------------------------------------
@@ -95,10 +107,10 @@ def _exchange_code(code: str, verifier: str) -> dict:
 
 def _validate_id_token(id_token: str) -> dict:
     oidc = _discover()
-    signing_key = _get_jwks_client().get_signing_key_from_jwt(id_token)
+    signing_key = _get_signing_key(id_token)
     claims = jwt.decode(
         id_token,
-        signing_key.key,
+        signing_key,
         algorithms=["RS256", "ES256"],
         audience=_cfg("OIDC_CLIENT_ID"),
         issuer=oidc["issuer"],
