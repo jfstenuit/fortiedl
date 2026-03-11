@@ -33,13 +33,19 @@ export function renderEntries(entries, sortKey, sortDir, onDelete, onHistory) {
       <div class="entry-ip">${escHtml(e.ip)}</div>
       <div class="entry-meta">
         <span class="entry-reason" title="${escHtml(e.reason)}">${escHtml(e.reason)}</span>
-        <span class="entry-by">by ${escHtml(e.added_by)}</span>
-        <span class="entry-added" title="${escHtml(fmtDate(e.added_at))}">added ${fmtDate(e.added_at)}</span>
+        <span class="entry-by">${escHtml(e.added_by)}</span>
+        <span class="entry-added" title="${escHtml(fmtDate(e.added_at))}">${fmtDate(e.added_at)}</span>
         <span class="entry-expires tag tag--${expiryLabel(e.expires_at) === 'expired' ? 'red' : 'blue'}">
           expires ${fmtDate(e.expires_at)} (${expiryLabel(e.expires_at)})
         </span>
       </div>
       <div class="entry-actions">
+        <a class="btn btn--ghost btn--sm btn--icon"
+           href="https://www.virustotal.com/gui/ip-address/${escHtml(e.ip)}"
+           target="_blank" rel="noopener noreferrer"
+           title="View on VirusTotal" aria-label="View on VirusTotal">
+          <img src="/static/img/vtlogo.svg" alt="" width="16" height="16" class="vt-icon">
+        </a>
         <button class="btn btn--ghost btn--sm js-history" data-ip="${escHtml(e.ip)}">History</button>
         <button class="btn btn--danger btn--sm js-delete"
           data-ip="${escHtml(e.ip)}" data-list="${escHtml(e.list_name)}">Delete</button>
